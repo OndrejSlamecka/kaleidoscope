@@ -7,6 +7,7 @@ import Data.Word
 import Data.String
 import Data.List
 import Data.Function
+import Data.ByteString.Short (ShortByteString)
 import qualified Data.Map as Map
 
 import Control.Monad.State
@@ -33,26 +34,26 @@ runLLVM :: AST.Module -> LLVM a -> AST.Module
 runLLVM mod (LLVM m) = execState m mod
 
 emptyModule :: String -> AST.Module
-emptyModule label = defaultModule { moduleName = label }
+emptyModule label = defaultModule { moduleName = fromString label }
 
 addDefn :: Definition -> LLVM ()
 addDefn d = do
   defs <- gets moduleDefinitions
   modify $ \s -> s { moduleDefinitions = defs ++ [d] }
 
-define ::  Type -> String -> [(Type, Name)] -> [BasicBlock] -> LLVM ()
+define ::  Type -> Name -> [(Type, Name)] -> [BasicBlock] -> LLVM ()
 define retty label argtys body = addDefn $
   GlobalDefinition $ functionDefaults {
-    name        = Name label
+    name        = label
   , parameters  = ([Parameter ty nm [] | (ty, nm) <- argtys], False)
   , returnType  = retty
   , basicBlocks = body
   }
 
-external ::  Type -> String -> [(Type, Name)] -> LLVM ()
+external ::  Type -> Name -> [(Type, Name)] -> LLVM ()
 external retty label argtys = addDefn $
   GlobalDefinition $ functionDefaults {
-    name        = Name label
+    name        = label
   , linkage     = L.External
   , parameters  = ([Parameter ty nm [] | (ty, nm) <- argtys], False)
   , returnType  = retty
@@ -65,19 +66,19 @@ external retty label argtys = addDefn $
 
 -- IEEE 754 double
 double :: Type
-double = FloatingPointType 64 IEEE
+double = FloatingPointType DoubleFP
 
 -------------------------------------------------------------------------------
 -- Names
 -------------------------------------------------------------------------------
 
-type Names = Map.Map String Int
+type Names = Map.Map ShortByteString Int
 
-uniqueName :: String -> Names -> (String, Names)
+uniqueName :: ShortByteString -> Names -> (Name, Names)
 uniqueName nm ns =
   case Map.lookup nm ns of
-    Nothing -> (nm,  Map.insert nm 1 ns)
-    Just ix -> (nm ++ show ix, Map.insert nm (ix+1) ns)
+    Nothing -> (Name $ nm,  Map.insert nm 1 ns)
+    Just ix -> (Name $ nm `mappend` fromString (show ix), Map.insert nm (ix+1) ns)
 
 -------------------------------------------------------------------------------
 -- Codegen State
@@ -121,7 +122,7 @@ makeBlock (l, (BlockState _ s t)) = BasicBlock l (reverse s) (maketerm t)
     maketerm (Just x) = x
     maketerm Nothing = error $ "Block has no terminator: " ++ (show l)
 
-entryBlockName :: String
+entryBlockName :: ShortByteString
 entryBlockName = "entry"
 
 emptyBlock :: Int -> BlockState
@@ -161,7 +162,7 @@ terminator trm = do
 entry :: Codegen Name
 entry = gets currentBlock
 
-addBlock :: String -> Codegen Name
+addBlock :: ShortByteString -> Codegen Name
 addBlock bname = do
   bls <- gets blocks
   ix  <- gets blockCount
@@ -170,11 +171,11 @@ addBlock bname = do
   let new = emptyBlock ix
       (qname, supply) = uniqueName bname nms
 
-  modify $ \s -> s { blocks = Map.insert (Name qname) new bls
+  modify $ \s -> s { blocks = Map.insert qname new bls
                    , blockCount = ix + 1
                    , names = supply
                    }
-  return (Name qname)
+  return qname
 
 setBlock :: Name -> Codegen Name
 setBlock bname = do
