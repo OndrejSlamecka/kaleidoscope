@@ -94,7 +94,7 @@ liftError = runExceptT >=> either fail return
 
 codegen :: AST.Module -> [S.Expr] -> IO AST.Module
 codegen mod fns = withContext $ \context ->
-  liftError $ withModuleFromAST context newast $ \m -> do
+  withModuleFromAST context newast $ \m -> do
     llstr <- moduleLLVMAssembly m
     BS.putStrLn llstr
     return newast
