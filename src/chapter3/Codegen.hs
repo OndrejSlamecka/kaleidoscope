@@ -15,6 +15,7 @@ import Control.Applicative
 
 import LLVM.AST
 import LLVM.AST.Global
+import LLVM.AST.AddrSpace
 import qualified LLVM.AST as AST
 
 import qualified LLVM.AST.Linkage as L
@@ -59,6 +60,23 @@ external retty label argtys = addDefn $
   , returnType  = retty
   , basicBlocks = []
   }
+
+lookupFnTypeH :: [Definition] -> Name -> Type
+lookupFnTypeH defs nm =
+  case lookup nm fns of
+    Nothing -> error $ "Function not declared: " ++ show nm
+    Just (rt, (params, _)) -> pointerType rt [ty | (Parameter ty _ _) <- params]
+  where
+    fns = [(nm, (rt, params)) | GlobalDefinition f@(Function { name = nm, returnType = rt, parameters = params }) <- defs]
+    pointerType resultType argsType =
+      PointerType {
+        pointerReferent = FunctionType {
+          resultType = resultType
+        , argumentTypes = argsType
+        , isVarArg = False
+        }
+      , pointerAddrSpace = AddrSpace 0 -- TODO: Really?
+      }
 
 ---------------------------------------------------------------------------------
 -- Types
@@ -229,8 +247,8 @@ local = LocalReference double
 global ::  Name -> C.Constant
 global = C.GlobalReference double
 
-externf :: Name -> Operand
-externf = ConstantOperand . C.GlobalReference double
+externf :: Type -> Name -> Operand
+externf ty nm = ConstantOperand $ C.GlobalReference ty nm
 
 -- Arithmetic and Constants
 fadd :: Operand -> Operand -> Codegen Operand
